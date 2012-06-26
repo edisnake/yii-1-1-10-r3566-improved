@@ -59,6 +59,7 @@ class ModelCode extends CCodeModel
 
 	public function prepare()
 	{
+		
 		if(($pos=strrpos($this->tableName,'.'))!==false)
 		{
 			$schema=substr($this->tableName,0,$pos);
@@ -208,17 +209,29 @@ class ModelCode extends CCodeModel
 		$numerical=array();
 		$length=array();
 		$safe=array();
+		$float=array();
 		foreach($table->columns as $column)
 		{
-			if($column->autoIncrement)
+			if($column->autoIncrement && (is_string($table->primaryKey) || 
+				(is_array($table->primaryKey) && (strcmp($column->type, 'integer') == 0 || strcmp($column->type, 'float') == 0) && !$column->isForeignKey)))
 				continue;
 			$r=!$column->allowNull && $column->defaultValue===null;
 			if($r)
 				$required[]=$column->name;
-			if($column->type==='integer')
+			if($column->type==='integer'){
 				$integers[]=$column->name;
-			else if($column->type==='double')
+				if ($column->precision>0)
+					$length[$column->precision][]=$column->name;
+			}
+			else if($column->type==='double'){
 				$numerical[]=$column->name;
+				if ($column->precision>0){
+					$length[$column->precision+1][]=$column->name;
+				
+					if ($column->scale>0)
+						$float[$column->precision-$column->scale.'-'.$column->scale][]=$column->name;
+				}
+			}
 			else if($column->type==='string' && $column->size>0)
 				$length[$column->size][]=$column->name;
 			else if(!$column->isPrimaryKey && !$r)
@@ -235,6 +248,14 @@ class ModelCode extends CCodeModel
 			foreach($length as $len=>$cols)
 				$rules[]="array('".implode(', ',$cols)."', 'length', 'max'=>$len)";
 		}
+		if ($float!==array())
+		{
+			foreach($float as $len=>$cols){
+				$aux = explode('-',$len);
+				$rules[]="array('".implode(', ',$cols)."', 'match', 'pattern'=>'/^\d{1,$aux[0]}(\.\d{1,$aux[1]})?$/')";
+			}
+		}
+		
 		if($safe!==array())
 			$rules[]="array('".implode(', ',$safe)."', 'safe')";
 
@@ -356,7 +377,7 @@ class ModelCode extends CCodeModel
 		foreach(explode('_',$tableName) as $name)
 		{
 			if($name!=='')
-				$className.=ucfirst($name);
+				$className.=ucfirst(strtolower($name));
 		}
 		return $className;
 	}
